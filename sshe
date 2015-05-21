@@ -3,4 +3,4 @@
 # on the remote machine.
 # The only argument (but a required argument) is the remote machine name.
 
-ssh -t -R $SSHEDIT_SOCK:$SSHEDIT_SOCK $1 SSHEDIT_SOCK=$SSHEDIT_SOCK $SHELL
+ssh -t -R $SSHED_SOCK:$SSHED_SOCK $1 SSHED_SOCK=$SSHED_SOCK $SHELL

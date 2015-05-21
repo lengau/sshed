@@ -1,8 +1,8 @@
-This file contains notes about changes I had to make to my machine for sshedit
+This file contains notes about changes I had to make to my machine for sshed
 or any software requirements, etc.
 
 SOFTWARE REQUIREMENTS:
-Part of the goal of sshedit is to have the minimum possible requirements on
+Part of the goal of sshed is to have the minimum possible requirements on
 the host side. Whilst the client side is expected to be the user's personal
 desktop or laptop and thus dependencies are of little concern, the host machine
 could be anything that either shouldn't have extra software installed (server,
@@ -18,20 +18,20 @@ BOTH HOST AND CLIENT:
 
 
 SSH SESSION:
-You need to forward the sshedit socket to the remote server. To do that, we
+You need to forward the sshed socket to the remote server. To do that, we
 use SendEnv on the local machine and AcceptEnv on the remote machine.
 
-On the remote machine, add SSHEDIT_DIRECTORY to the server's AcceptEnv line.
+On the remote machine, add SSHED_SOCK to the server's AcceptEnv line.
 My remote machine's AcceptEnv is:
-AcceptEnv LANG LC_* SSHEDIT_SOCK
+AcceptEnv LANG LC_* SSHED_SOCK
 
 If you don't have root access to the remote machine, you can manually copy the
-SSHEDIT_SOCK environment varible.
+SSHED_SOCK environment varible.
 
 This line should be in /etc/ssh/sshd_config. Don't forget to reload the SSH
 server so these changes take effect.
 
-On the local machine, add SSHEDIT_SOCK to the client's SendEnv line.
+On the local machine, add sshed_SOCK to the client's SendEnv line.
 You can do this globally in /etc/ssh/ssh_config or for just one user in
 ~/.ssh/config
 Within that, you can also specify it per host etc.
@@ -39,8 +39,8 @@ Within that, you can also specify it per host etc.
 I changed it to send it only to one host (terra) with the following two lines:
 
 Host terra
-  SendEnv LANG LC_* SSHEDIT_SOCK
+  SendEnv LANG LC_* SSHED_SOCK
 
 You also need to forward the actual socket. An example command is:
-  ssh -R $SSHEDIT_SOCK:$SSHEDIT_SOCK/socket terra
+  ssh -R $SSHED_SOCK:$SSHED_SOCK/socket terra
 
