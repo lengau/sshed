@@ -1,0 +1,25 @@
+This is a quick, basic description of the communications protocol used on an
+sshedit pipe. The motivation behind this file is to allow others to implement
+compatible sshedit programs in the language of their choice.
+
+Version numbers should be used whenever incompatible changes are made to the
+way sshedit passes a file over the socket. I'm already planning incompatible
+changes (e.g. sending only modifications over the wire rather than sending
+the entire file both ways), so I wanted to be prepared.
+
+Versions marked as deprecated are no longer implemented by the most recent
+versions of sshedit.
+
+ALL VERSIONS:
+All versions of the sshedit protocol must begin with the version number written
+as a string, followed by a newline.
+
+Version 1:
+The host side (the remote machine where `sshedit filename` is run) simply
+declares the protocol version and the client (local machine) must implement it.
+Host: open socket
+Host: write a line containing '1'.
+Host: write a line containing the filename converted to bytes.
+Host: write a line the size (in bytes) of the file as a string
+Host: write the file.
+Client: write the modified file.

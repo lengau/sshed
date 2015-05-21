@@ -1,0 +1,6 @@
+#!/bin/bash
+# A quick command that forwards SSHEdit without needing to make any changes
+# on the remote machine.
+# The only argument (but a required argument) is the remote machine name.
+
+ssh -t -R $SSHEDIT_SOCK:$SSHEDIT_SOCK $1 SSHEDIT_SOCK=$SSHEDIT_SOCK $SHELL
