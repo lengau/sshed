@@ -92,7 +92,7 @@ def main(args):
 	sshed_dir = tempfile.TemporaryDirectory(prefix='sshed-')
 	# TODO: Allow manually setting the socket location.
 	socket_address = args.socketaddress or sshed_dir.name
-	print('export SSHEDIT_SOCK=%s' % socket_address)
+	print('export SSHED_SOCK=%s' % socket_address)
 	if socket_address == sshed_dir.name:
 		socket_address += '/socket'
 	server = SocketServer(socket_address, SocketRequestHandler)
