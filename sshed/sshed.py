@@ -37,7 +37,7 @@ def main():
 	try:
 		client.connect(os.environ['SSHED_SOCK'])
 	except (FileNotFoundError, KeyError):
-		print_err('Cannot open socket to local machine. Using remote editor.')
+		logging.error('Cannot open socket to local machine. Using remote editor.')
 		subprocess.call([choose_editor(), args.file])
 		return 1
 	client.send(b'1\n')  # Protocol version

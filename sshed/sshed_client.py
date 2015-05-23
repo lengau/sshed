@@ -125,6 +125,45 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 		os.remove(filename)
 
 
+class EnvironmentVarible(object):
+	"""Environment variable exporter.
+
+	Generates specialised commands for exporting environment variables in a
+	variety of shells.
+	"""
+	SHELL_FORMATS = {
+		'csh': 'setenv {name} {contents}',
+		'fish': 'setenv {name} {contents}',
+		'bash': 'export {name}={contents}',
+	}
+	def __init__(self, name, contents):
+		self.name = name
+		self.contents = contents
+
+	def generate(self, shell, smart=True):
+		"""Generate a command string to set an environment variable.
+
+		Positional arguments:
+			shell: The name of the shell for which to generate the command.
+
+		Keyword arguments:
+			smart: Whether to use smart detection for unknown shells.
+
+		Returns:
+			A string containing the command string.
+		"""
+		if shell not in self.SHELL_FORMATS:
+			if smart:
+				if shell.endswith('csh'):
+					shell = 'csh'
+				else:
+					shell = 'bash'
+			else:
+				raise ValueError('Unknown shell %s' % value)
+		return self.SHELL_FORMATS[shell].format(
+			name=self.name, contents=self.contents)
+
+
 def parse_arguments():
 	"""Parse the arguments handed into the program. Returns a namespace."""
 	parser = argparse.ArgumentParser()
@@ -140,11 +179,22 @@ def parse_arguments():
 	parser.add_argument(
 		'-b', '--bash', action='store_const',
 		dest='shell', const='bash',
-		help='Generate bash commands on stdout.')
+		help='Generate bash commands on stdout. (default if SHELL is missing)')
+	parser.add_argument(
+		'-c', '--csh', action='store_const',
+		dest='shell', const='csh',
+		help='Generate csh commands to stdout.')
+	parser.add_argument(
+		'--fish', action='store_const',
+		dest='shell', const='fish',
+		help='Generate fish commands to stdout.')
 	parser.add_argument(
 		'-a', '--socketaddress',
 		help='Give the socket a specific filename.')
-	return parser.parse_args()
+	args = parser.parse_args()
+	if not args.shell:
+		args.shell = os.path.basename(os.environ.get('SHELL'))
+	return args
 
 
 def main(args):
@@ -153,7 +203,8 @@ def main(args):
 	sshed_dir = tempfile.TemporaryDirectory(prefix='sshed-')
 	# TODO: Allow manually setting the socket location.
 	socket_address = args.socketaddress or sshed_dir.name
-	print('export SSHED_SOCK=%s' % socket_address)
+	socket_environment_variable = EnvironmentVarible('SSHED_SOCK', socket_address)
+	print(socket_environment_variable.generate(args.shell))
 	if socket_address == sshed_dir.name:
 		socket_address += '/socket'
 	server = SocketServer(socket_address, SocketRequestHandler)
