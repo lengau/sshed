@@ -112,8 +112,7 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 		filename = file.name
 		self.get_bytes(self.length, file=file)
 		file.close()
-		# TODO: Editor detection.
-		editor = os.environ.get('EDITOR').split()
+		editor = sshed.choose_editor()
 		subprocess.call(editor + [filename])
 		# TODO: Only report back modifications to the file.
 		with open(filename, 'rb') as file:

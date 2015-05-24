@@ -83,10 +83,10 @@ def main():
 	os.umask(USER_ONLY_UMASK)
 	socket_file = find_socket(args.socket_address)
 	if socket_file is None:
-		logging.warning('')
+		logging.warning('Using a host side text editor instead.')
+		return subprocess.call(choose_editor() + [args.file])
 	client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 	client.connect(socket_file)
-	return subprocess.call(choose_editor() + [args.file])
 	client.send(b'1\n')  # Protocol version
 	client.send(os.path.basename(args.file).encode() + b'\n')
 	client.send(str(os.path.getsize(args.file)).encode() + b'\n')
