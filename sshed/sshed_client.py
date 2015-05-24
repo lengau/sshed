@@ -1,4 +1,3 @@
-import string
 #!/usr/bin/env python3
 """Client side executable for sshed.
 
@@ -15,10 +14,6 @@ import sys
 import tempfile
 
 import sshed
-
-# TODO: Use modes from the stat library.
-USER_ONLY_UMASK = 0o077
-LOGGING_FORMAT = '%(levelname)s: %(message)s'
 
 
 class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -117,8 +112,9 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 		filename = file.name
 		self.get_bytes(self.length, file=file)
 		file.close()
-		# TODO: Any text editor.
-		subprocess.call(['kate', '-b', filename])
+		# TODO: Editor detection.
+		editor = os.environ.get('EDITOR').split()
+		subprocess.call(editor + [filename])
 		# TODO: Only report back modifications to the file.
 		with open(filename, 'rb') as file:
 			self.request.sendall(file.read())
@@ -172,39 +168,49 @@ def parse_arguments():
 		dest='logging_level', const=logging.DEBUG, default=logging.WARNING,
 		help='Run in debug mode.')
 	# TODO: Daemonize sshed_client.
-	parser.add_argument(
+
+	shell_group = parser.add_argument_group(
+		title='Shell choice arguments',
+		description=('Arguments that allow manually specifying the shell '
+		             'for which to generate the commands to set environment '
+		             'variables.'))
+	shell = shell_group.add_mutually_exclusive_group()
+	shell.add_argument(
 		'--shell',
 		default=None,
-		help='Generate commands for the chosen shell on stdout.')
-	parser.add_argument(
+		help=('Specify the shell for which to write commands. Default is to '
+		      'detect from the SHELL environment variable or (if undetected) '
+		      'fall back to bash.'))
+	shell.add_argument(
 		'-b', '--bash', action='store_const',
 		dest='shell', const='bash',
-		help='Generate bash commands on stdout. (default if SHELL is missing)')
-	parser.add_argument(
+		help='Generate bash commands. Shortcut for "--shell bash".')
+	shell.add_argument(
 		'-c', '--csh', action='store_const',
 		dest='shell', const='csh',
-		help='Generate csh commands to stdout.')
-	parser.add_argument(
+		help='Generate csh commands. Shortcut for "--shell csh".')
+	shell.add_argument(
 		'--fish', action='store_const',
 		dest='shell', const='fish',
-		help='Generate fish commands to stdout.')
+		help='Generate fish commands. Shortcut for "--shell fish".')
+
 	parser.add_argument(
 		'-a', '--socketaddress',
+		dest='socket_address',
 		help='Give the socket a specific filename.')
 	args = parser.parse_args()
 	if not args.shell:
-		args.shell = os.path.basename(os.environ.get('SHELL'))
+		args.shell = os.path.basename(os.environ.get('SHELL')) or 'bash'
 	return args
 
 
 def main(args):
-	logging.basicConfig(format=LOGGING_FORMAT, level=args.logging_level)
-	os.umask(USER_ONLY_UMASK)
+	logging.basicConfig(format=sshed.LOGGING_FORMAT, level=args.logging_level)
+	os.umask(sshed.USER_ONLY_UMASK)
 	sshed_dir = tempfile.TemporaryDirectory(prefix='sshed-')
-	# TODO: Allow manually setting the socket location.
-	socket_address = args.socketaddress or sshed_dir.name
-	socket_environment_variable = EnvironmentVarible('SSHED_SOCK', socket_address)
-	print(socket_environment_variable.generate(args.shell))
+	socket_address = args.socket_address or sshed_dir.name
+	socket_var = EnvironmentVarible('SSHED_SOCK', socket_address)
+	print(socket_var.generate(args.shell))
 	if socket_address == sshed_dir.name:
 		socket_address += '/socket'
 	server = SocketServer(socket_address, SocketRequestHandler)
