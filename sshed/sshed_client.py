@@ -6,8 +6,10 @@ to be properly set up to allow sshed to function properly.
 """
 
 import argparse
+import difflib
 import logging
 import os
+import shutil
 import socketserver
 import subprocess
 import sys
@@ -33,6 +35,7 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 	"""
 	A socket request handler. Handles a single file edit request.
 	"""
+	PROTOCOL_VERSIONS = (b'1', b'2')
 
 	def get_line(self):
 		"""Get a line of data from the socket, excluding the ending newline."""
@@ -91,10 +94,41 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 			'sshed_client.SocketRequestHandler.get_bytes should never terminate'
 			'its loop.')
 
+	def send_diff(self, original_filename, editing_filename):
+		"""Get the different between to files and send it over the socket."""
+		with open(original_filename, 'rb') as original:
+			original_lines = original.readlines()
+		with open(editing_filename, 'rb') as edited:
+			edited_lines = edited.readlines()
+		diff = difflib.ndiff(original_lines, edited_lines)
+		self.request.sendall()
+
+	def simple_respond(self, original_name, editing_name):
+		"""Generate a response replying with the entire file.
+
+		This is how protocol version 1 works, and is also used for smaller files
+		when appropriate.
+		"""
+		original_mtime = os.path.getmtime(original_name)
+		os.remove(original_name)
+		if original_mtime >= os.path.getmtime(editing_name):
+			# If it's not edited, we don't need to bother sending anything.
+			os.remove(editing_name)
+			return
+		with open(editing_name, 'rb') as file:
+			self.request.sendall(file.read())
+		os.remove(editing_name)
+
 	def handle(self):
 		"""Handle the socket request."""
 		protocol_version = self.get_line()
-		if protocol_version != b'1':
+		if protocol_version == b'1':
+			logging.debug(
+				'Protocol version 1 chosen. Basic file transfer only.')
+			self.diff_editing = False
+		else:
+			self.diff_editing = True
+		if protocol_version not in self.PROTOCOL_VERSIONS:
 			logging.error('Unknown protocol version. Dropping connection.')
 			logging.error('Protocol version: %s' % protocol_version)
 			return
@@ -108,15 +142,26 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 			logging.error('Length cannot be %s', length)
 			return
 		logging.debug('Length of file: %s', self.length)
-		with tempfile.NamedTemporaryFile(
-			prefix='%s_' % filename, delete=False) as file:
-			filename = file.name
-			self.get_bytes(self.length, file=file)
+		with tempfile.NamedTemporaryFile(prefix='%s_orig_' % filename,
+		                                 delete=False) as original_file:
+			self.get_bytes(self.length, file=original_file)
+			original_file.seek(0)
+			with tempfile.NamedTemporaryFile(prefix='%s_' % filename,
+			                                 delete=False) as editing_file:
+				shutil.copyfileobj(original_file, editing_file)
+				original_file.seek(0)
+				logging.debug(
+					'Start of original file: %s',
+					original_file.read(128))
+				editing_file.seek(0)
+				logging.debug(
+					'Start of editing file: %s',
+					editing_file.read(128))
 		editor = sshed.choose_editor()
-		subprocess.call(editor + [filename])
-		# TODO: Only report back modifications to the file.
-		with open(filename, 'rb') as file:
-			self.request.sendall(file.read())
+		if not self.diff_editing:
+			subprocess.call(editor + [editing_file.name])
+			self.simple_respond(original_file.name, editing_file.name)
+			return
 		os.remove(filename)
 
 
