@@ -108,10 +108,10 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 			logging.error('Length cannot be %s', length)
 			return
 		logging.debug('Length of file: %s', self.length)
-		file = tempfile.NamedTemporaryFile(prefix='%s_' % filename, delete=False)
-		filename = file.name
-		self.get_bytes(self.length, file=file)
-		file.close()
+		with tempfile.NamedTemporaryFile(
+			prefix='%s_' % filename, delete=False) as file:
+			filename = file.name
+			self.get_bytes(self.length, file=file)
 		editor = sshed.choose_editor()
 		subprocess.call(editor + [filename])
 		# TODO: Only report back modifications to the file.

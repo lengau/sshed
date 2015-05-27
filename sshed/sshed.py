@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import platform
 import shutil
 import socket
 import stat
@@ -12,7 +13,7 @@ import tempfile
 
 
 # TODO: Use modes from the stat library.
-USER_ONLY_UMASK = 0o077
+USER_ONLY_UMASK = 0o177
 BUFFER_SIZE = 4096
 LOGGING_FORMAT = '%(levelname)s: %(message)s'
 
@@ -38,18 +39,31 @@ def choose_editor():
 	if not editor or 'sshed' in editor:
 		editor = (shutil.which('sensible-editor') or shutil.which('xdg-open') or
 		          shutil.which('nano') or shutil.which('ed'))
+	logging.debug('Chosen editor: %s', editor)
 	return editor.split()
 
 
-def find_socket(socket_address):
+def graphical_session():
+	"""Return whether the current session is graphical."""
+	#TODO: Detect a Mir session.
+	#TODO (issue 2): Detect a graphical session in Windows.
+	GRAPHICAL_VARIABLES = [
+		'DISPLAY',  # X11
+		'WAYLAND_DISPLAY',  # Wayland
+		'TERM_PROGRAM',  # OS X
+		]
+	return True in map(bool, map(os.environ.get, GRAPHICAL_VARIABLES))
+
+
+def find_socket(socket_address=None):
 	"""Return the path to the socket file to use, or None if unable."""
 	if not socket_address:
 		try:
 			socket_address = os.environ['SSHED_SOCK']
 		except KeyError:
 			logging.error(
-				('No SSHED_SOCK environment variable and no socket address '
-				 'passed via command line.'))
+				'No SSHED_SOCK environment variable and no socket address '
+				'passed via command line.')
 			return None
 	try:
 		file_stats = os.stat(socket_address)
@@ -63,7 +77,8 @@ def find_socket(socket_address):
 			socket_address += '/socket'
 		except FileNotFoundError:
 			logging.error(
-				'Directory in SSHED_SOCK does not contain a valid socket file.')
+				'Specified socket directory (%s) does not contain a valid '
+				'socket file.', socket_address)
 			return None
 	if not stat.S_ISSOCK(file_stats.st_mode):
 		logging.error('SSHED_SOCK does not point to a socket.')
@@ -74,6 +89,7 @@ def find_socket(socket_address):
 	if not stat.S_IMODE(file_stats.st_mode) == (stat.S_IRUSR|stat.S_IWUSR):
 		logging.error('Socket access is too permissive.')
 		return None
+	logging.debug('Socket found: %s', socket_address)
 	return socket_address
 
 

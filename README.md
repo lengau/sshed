@@ -13,6 +13,7 @@ sshed is currently WAY WAY pre-alpha software. I was even badly behaved and
 haven't written any unit tests yet. (I know. Shame on me.) However, the
 following should be enough to get a copy of sshed working from the source
 directory.
+
 1. On the remote host, modify the AcceptEnv line of /etc/ssh/sshd_config to
    include the text variable "SSHED_SOCK". This isn't required, but it helps.
 2. In ~/.ssh/config, add a SendEnv line that sends "SSHED_SOCK".
