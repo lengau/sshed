@@ -103,12 +103,13 @@ def main():
 		return subprocess.call(choose_editor() + [args.file])
 	client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 	client.connect(socket_file)
-	client.send(b'1\n')  # Protocol version
-	client.send(os.path.basename(args.file).encode() + b'\n')
-	client.send(str(os.path.getsize(args.file)).encode() + b'\n')
+	client.send(b'Version:1\n')  # Protocol version
+	client.send(b'Filename:' + os.path.basename(args.file).encode() + b'\n')
+	client.send(b'Filesize:' + str(os.path.getsize(args.file)).encode() + b'\n\n')
+	client.send(b'Size:' + str(os.path.getsize(args.file)).encode() + b'\n\n')
 	with open(args.file, mode='r+b') as file:
 		# TODO: Don't require loading the entire file into memory all at once.
-		client.send(file.read())
+		client.send(file.readall())
 		# TODO: Only receive the changes from the client.
 		file.seek(0)
 		buffer = b'\0'
@@ -116,6 +117,11 @@ def main():
 			while len(buffer) > 0:
 				buffer = client.recv(BUFFER_SIZE)
 				file.write(buffer)
+			if file.tell() == 0:
+				logging.debug('No file data sent back. Not modifying file.')
+			else:
+				# TODO: Receive length of new file from client.
+				file.truncate()
 		except KeyboardInterrupt:
 			return 2
 

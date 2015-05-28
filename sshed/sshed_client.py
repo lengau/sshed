@@ -35,7 +35,17 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 	"""
 	A socket request handler. Handles a single file edit request.
 	"""
-	PROTOCOL_VERSIONS = (b'1', b'2')
+	def setup(self):
+		"""Set up the data structures required for a file request."""
+		self.headers = {}
+		self.protocol_version = None
+
+	PROTOCOL_VERSIONS = ('1')
+	"""Accepted (known) protocol versions.
+
+	A more detailed description of protocol versions is found in the PROTOCOL
+	file in the top level source directory of sshed.
+	"""
 
 	def get_line(self):
 		"""Get a line of data from the socket, excluding the ending newline."""
@@ -119,35 +129,16 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 			self.request.sendall(file.read())
 		os.remove(editing_name)
 
-	def handle(self):
-		"""Handle the socket request."""
-		protocol_version = self.get_line()
-		if protocol_version == b'1':
-			logging.debug(
-				'Protocol version 1 chosen. Basic file transfer only.')
-			self.diff_editing = False
-		else:
-			self.diff_editing = True
-		if protocol_version not in self.PROTOCOL_VERSIONS:
-			logging.error('Unknown protocol version. Dropping connection.')
-			logging.error('Protocol version: %s' % protocol_version)
-			return
-		filename = self.get_line().decode()
-		logging.debug('Filename to edit: %s', filename)
-		length = self.get_line()
-		try:
-			self.length = int(length)
-		except ValueError:
-			# If we receive invalid data, simply drop the connection.
-			logging.error('Length cannot be %s', length)
-			return
-		logging.debug('Length of file: %s', self.length)
-		with tempfile.NamedTemporaryFile(prefix='%s_orig_' % filename,
-		                                 delete=False) as original_file:
+	def get_file(self):
+		"""Retrieve the file and place it into two local temp files."""
+		with tempfile.NamedTemporaryFile(
+			  prefix='%s_orig_' % self.headers['Filename'],
+			  delete=False) as original_file:
 			self.get_bytes(self.length, file=original_file)
 			original_file.seek(0)
-			with tempfile.NamedTemporaryFile(prefix='%s_' % filename,
-			                                 delete=False) as editing_file:
+			with tempfile.NamedTemporaryFile(
+				  prefix='%s_' % self.headers['Filename'],
+				  delete=False) as editing_file:
 				shutil.copyfileobj(original_file, editing_file)
 				original_file.seek(0)
 				logging.debug(
@@ -157,12 +148,52 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 				logging.debug(
 					'Start of editing file: %s',
 					editing_file.read(128))
-		editor = sshed.choose_editor()
-		if not self.diff_editing:
-			subprocess.call(editor + [editing_file.name])
-			self.simple_respond(original_file.name, editing_file.name)
+		self.original_name = original_file.name
+		self.editing_name = editing_file.name
+
+	def get_headers(self):
+		"""Return the next set of headers read from the socket.
+
+		Each transfer should include at least a set of headers, and potentially
+		content. If the transfer includes content, it must include a "Size"
+		header to determine the length (in bytes) of the content.
+		"""
+		headers = {}
+		while True:
+			line = self.get_line()
+			if line == b'':
+				break
+			name, contents = line.split(b':')
+			headers[name.decode().strip()] = contents.decode().strip()
+		logging.debug('Headers: %s', headers)
+		return headers
+
+
+	def handle(self):
+		"""Handle the socket request."""
+		self.headers = self.get_headers()
+		if self.headers['Version'] not in self.PROTOCOL_VERSIONS:
+			logging.error('Unknown protocol version. Dropping connection.')
+			logging.error('Protocol version requested: %s',
+			              self.headers['Version'])
 			return
-		os.remove(filename)
+		logging.debug('File to edit: %s', self.headers['Filename'])
+		try:
+			self.length = int(self.headers['Filesize'])
+		except ValueError:
+			# If we receive invalid data, simply drop the connection.
+			logging.error('Cannot convert size to integer: %s',
+			              self.headers['Filesize'])
+			return
+		logging.debug('Length of file (in bytes): %d', self.length)
+
+		self.get_file()
+		editor = sshed.choose_editor()
+		if not self.headers.get('Differential'):
+			subprocess.call(editor + [self.editing_name])
+			self.simple_respond(self.original_name, self.editing_name)
+			return
+		map(os.remove, (self.original_name, self.editing_name))
 
 
 class EnvironmentVarible(object):
@@ -199,7 +230,7 @@ class EnvironmentVarible(object):
 				else:
 					shell = 'bash'
 			else:
-				raise ValueError('Unknown shell %s' % value)
+				raise ValueError('Unknown shell: %s' % shell)
 		return self.SHELL_FORMATS[shell].format(
 			name=self.name, contents=self.contents)
 
