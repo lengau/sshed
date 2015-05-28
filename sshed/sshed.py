@@ -105,11 +105,11 @@ def main():
 	client.connect(socket_file)
 	client.send(b'Version:1\n')  # Protocol version
 	client.send(b'Filename:' + os.path.basename(args.file).encode() + b'\n')
-	client.send(b'Filesize:' + str(os.path.getsize(args.file)).encode() + b'\n\n')
+	client.send(b'Filesize:' + str(os.path.getsize(args.file)).encode() + b'\n')
 	client.send(b'Size:' + str(os.path.getsize(args.file)).encode() + b'\n\n')
 	with open(args.file, mode='r+b') as file:
 		# TODO: Don't require loading the entire file into memory all at once.
-		client.send(file.readall())
+		client.send(file.read())
 		# TODO: Only receive the changes from the client.
 		file.seek(0)
 		buffer = b'\0'
