@@ -94,6 +94,49 @@ def find_socket(socket_address=None):
 	return socket_address
 
 
+def write_diff(headers, diff, file):
+	"""Update a file using a diff.
+
+	Positional arguments:
+		headers: a dictionary containing the packet headers.
+		diff: a bytes object containing the diff sent.
+		file: a file containing the original data. Also where the changes are
+			written.
+	"""
+	file.seek(0)
+	filesize = headers.get('Filesize')
+	logging.debug('Diff file repeated below:\n%s', diff)
+	diff = diff.split('\n')
+	diff.pop(0)
+	diff.pop(0)
+	output_lines = []
+	while True:
+		try:
+			while not diff[0].startswith('@'):
+				diff.pop(0)
+		except IndexError:
+			break
+		starting_line = int(diff.pop(0)[4:-2].split()[0].split(',')[0])
+		logging.debug('Moving to line %d.', starting_line)
+		while len(output_lines) < starting_line-1:
+			output_lines.append(file.readline())
+		logging.debug('Diff line: %s', diff[0])
+		if diff[0].startswith('+'):
+			logging.debug('Inserting line: %s', diff[0])
+			output_lines.append(diff.pop(0)[1:])
+		elif diff[0].startswith(' '):
+			logging.debug('Identical lines')
+			diff.pop(0)
+			output_lines.append(file.readline())
+		elif diff[0].startswith('-'):
+			logging.debug('Removing line: %s', diff[0])
+			file.readline()
+	output_lines.extend(file.readlines())
+	file.seek(0)
+	file.writelines(output_lines)
+
+
+
 def main():
 	args = parse_arguments()
 	logging.basicConfig(format=LOGGING_FORMAT, level=args.logging_level)
@@ -108,15 +151,25 @@ def main():
 	headers = dict(
 		Version=1,
 		Filename=os.path.basename(args.file),
-		Filesize=os.path.getsize(args.file))
+		Filesize=os.path.getsize(args.file),
+		# TODO: Allow the user to disable differential editing.
+		Differential=True)
 	with open(args.file, mode='r+b') as file:
 		packet_handler.send(headers, file)
 		while True:
 			file.seek(0)
 			try:
 				logging.debug('Waiting for response from client')
-				packet_handler.get(file)
-				logging.debug('Response written to file.')
+				headers, edited = packet_handler.get()
+				logging.debug('Headers: %s', headers)
+				if headers.get('Differential') is True:
+					logging.debug('Differential editing enabled.')
+					write_diff(headers, edited.decode(), file)
+				else:
+					logging.debug('Differential editing disabled.')
+					file.write(edited)
+					file.truncate()
+				logging.debug('File updated.')
 			except packethandler.SocketClosedError:
 				logging.debug('Socket closed. Exiting.')
 				return 0

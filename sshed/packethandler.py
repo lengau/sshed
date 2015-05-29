@@ -46,7 +46,7 @@ class PacketHandler(object):
 		data = self._get_bytes(headers.get('Size', 0), file=file)
 		if data is None:
 			return headers
-		return (headers, bytes)
+		return (headers, data)
 
 	def _get_headers(self):
 		"""Retrieve the headers of a packet.
@@ -72,12 +72,12 @@ class PacketHandler(object):
 				name = name[1:-1]
 			if contents.startswith('"') and contents.endswith('"'):
 				contents = contents[1:-1]
-			if contents in self.STRING_TO_BOOL:
-				contents = self.STRING_TO_BOOL[contents]
 			try:
 				contents = int(contents)
 			except ValueError:
 				pass
+			if contents in self.STRING_TO_BOOL:
+				contents = self.STRING_TO_BOOL[contents]
 			headers[name] = contents
 		return headers
 
@@ -135,9 +135,12 @@ class PacketHandler(object):
 			headers: A dictionary containing the headers to send.
 			file: A file-like object or a bytes object to send
 		"""
-		file.seek(0, os.SEEK_END)
-		headers['Size'] = file.tell()
-		file.seek(0, os.SEEK_SET)
+		if isinstance(file, bytes):
+			headers['Size'] = len(file)
+		else:
+			file.seek(0, os.SEEK_END)
+			headers['Size'] = file.tell()
+			file.seek(0, os.SEEK_SET)
 		for header in headers:
 			header_string = '%s: %s\n' % (header, headers[header])
 			self.socket.sendall(header_string.encode('utf-8'))

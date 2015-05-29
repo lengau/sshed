@@ -34,7 +34,7 @@ class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 
 
 class SocketRequestHandler(socketserver.BaseRequestHandler,
-						   packethandler.PacketHandler):
+	                       packethandler.PacketHandler):
 	"""
 	A socket request handler. Handles a single file edit request.
 	"""
@@ -73,13 +73,12 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 			self.request.sendall(file.read())
 		os.remove(editing_name)
 
-	def duplicate_file(self, original, *args,
-			filetype=tempfile.NamedTemporaryFile, **kwargs):
+	def duplicate_file(self, original, filetype=tempfile.NamedTemporaryFile,
+		               **kwargs):
 		"""Return a file that duplicates the file passed in.
 
 		Positional arguments:
 			original: a file-like object containing the original file.
-			*args: positional arguments to pass to the object constructor.
 		Keyword arguments:
 			filetype: The class of file object to create.
 			**kwargs: Keyword arguments to pass to the object constructor.
@@ -89,14 +88,14 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 		"""
 		location = original.tell()
 		original.seek(0)
-		copy = filetype(*args, **kwargs)
+		copy = filetype(**kwargs)
 		shutil.copyfileobj(original, copy)
 		copy.seek(0)
 		original.seek(location)
 		return copy
 
 	def wait_until_edit_or_exit(self, filename, modified_time, process,
-			sleep_time=0.1):
+		                        sleep_time=0.1):
 		"""Wait until a file is edited or a process exits.
 
 		Positional arguments:
@@ -154,9 +153,45 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 			logging.debug('File has changed.')
 			logging.debug('New file: %s', edited_lines)
 			# TODO: differential editing
-			self.send({'Differential': 'False'}, temporary_file)
+			if (not self.differential or
+			    not self.send_diff(original_lines, edited_lines)):
+				self.send({'Differential': 'False'}, temporary_file)
 			original = temporary_file
 		os.remove(editing.name)
+
+	def send_diff(self, original, edited):
+		"""Differential-aware file sender.
+
+		NOTE: send_diff will always generate a diff, but may send the file
+		without a diff if that ends up being shorter.
+
+		Positional arguments:
+			original: An array of bytes objects, each containing a line.
+			edited: Like original, but for the edited file.
+		"""
+		original_strings = [line.decode() for line in original]
+		edited_strings = [line.decode() for line in edited]
+		edited_length = sum([len(line) for line in edited])
+		diff = difflib.unified_diff(original_strings, edited_strings)
+		logging.debug('Diff object: %s', diff)
+		diff_list = list(diff)
+		logging.debug('Diff list: %s', diff_list)
+		diff_bytes = ''.join(diff_list).encode('utf-8')
+		logging.debug('Diff bytes: %s', diff_bytes)
+		logging.debug('Generated diff:\n%s', diff_bytes.decode())
+		if len(diff_bytes) > edited_length:
+			logging.debug('Diff is longer than edited file. '
+			              'Sending file instead.')
+			return False
+		else:
+			headers = dict(
+				Differential=True,
+				Filesize=edited_length
+				# TODO: Add checksum of edited here.
+				)
+			self.send(headers, diff_bytes)
+		return True
+
 
 
 class EnvironmentVarible(object):
