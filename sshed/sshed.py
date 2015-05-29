@@ -11,10 +11,11 @@ import subprocess
 import sys
 import tempfile
 
+import packethandler
+
 
 # TODO: Use modes from the stat library.
 USER_ONLY_UMASK = 0o177
-BUFFER_SIZE = 4096
 LOGGING_FORMAT = '%(levelname)s: %(message)s'
 
 
@@ -103,28 +104,22 @@ def main():
 		return subprocess.call(choose_editor() + [args.file])
 	client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 	client.connect(socket_file)
-	client.send(b'Version:1\n')  # Protocol version
-	client.send(b'Filename:' + os.path.basename(args.file).encode() + b'\n')
-	client.send(b'Filesize:' + str(os.path.getsize(args.file)).encode() + b'\n')
-	client.send(b'Size:' + str(os.path.getsize(args.file)).encode() + b'\n\n')
+	packet_handler = packethandler.PacketHandler(client)
+	headers = dict(
+		Version=1,
+		Filename=os.path.basename(args.file),
+		Filesize=os.path.getsize(args.file))
 	with open(args.file, mode='r+b') as file:
-		# TODO: Don't require loading the entire file into memory all at once.
-		client.send(file.read())
-		# TODO: Only receive the changes from the client.
-		file.seek(0)
-		buffer = b'\0'
-		try:
-			while len(buffer) > 0:
-				buffer = client.recv(BUFFER_SIZE)
-				file.write(buffer)
-			if file.tell() == 0:
-				logging.debug('No file data sent back. Not modifying file.')
-			else:
-				# TODO: Receive length of new file from client.
-				file.truncate()
-		except KeyboardInterrupt:
-			return 2
-
+		packet_handler.send(headers, file)
+		while True:
+			file.seek(0)
+			try:
+				logging.debug('Waiting for response from client')
+				packet_handler.get(file)
+				logging.debug('Response written to file.')
+			except packethandler.SocketClosedError:
+				logging.debug('Socket closed. Exiting.')
+				return 0
 
 
 if __name__ == '__main__':

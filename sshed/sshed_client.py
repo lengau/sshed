@@ -14,8 +14,12 @@ import socketserver
 import subprocess
 import sys
 import tempfile
+import time
 
+import packethandler
 import sshed
+
+FOUR_MEGS = 4*2**20
 
 
 class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -26,83 +30,23 @@ class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 	pass
 
 
-class SocketClosedError(Exception):
-	"""An error to be raised when a socket is unexpectedly closed."""
-	pass
 
 
-class SocketRequestHandler(socketserver.BaseRequestHandler):
+
+class SocketRequestHandler(socketserver.BaseRequestHandler,
+						   packethandler.PacketHandler):
 	"""
 	A socket request handler. Handles a single file edit request.
 	"""
-	def setup(self):
-		"""Set up the data structures required for a file request."""
-		self.headers = {}
-		self.protocol_version = None
-
-	PROTOCOL_VERSIONS = ('1')
+	PROTOCOL_VERSIONS = range(1,2)
 	"""Accepted (known) protocol versions.
 
-	A more detailed description of protocol versions is found in the PROTOCOL
+	A more detailed description of protocol versions is found in the PROTOCOL.md
 	file in the top level source directory of sshed.
 	"""
 
-	def get_line(self):
-		"""Get a line of data from the socket, excluding the ending newline."""
-		try:
-			line_length = self.buffer.find(b'\n')
-		except AttributeError:
-			self.buffer = b''
-			line_length = -1
-		while line_length == -1:
-			self.buffer += self.request.recv(sshed.BUFFER_SIZE)
-			line_length = self.buffer.find(b'\n')
-		line, self.buffer = self.buffer.split(b'\n', 1)
-		logging.debug('Received line: %s', line)
-		return line
-
-	def get_bytes(self, length, file=None):
-		"""Get the specified number of bytes from the socket.
-
-		Return the specified number of bytes from the socket unless the file
-		argument is set, in which case it writes to file and returns nothing.
-
-		Positional arguments:
-			length: The length (in bytes) of the expected output.
-
-		Keyword arguments:
-			file: A file-like object into which to place the bytes.
-				Specific methods required are write and tell.
-
-		Returns:
-			A bytes object containing the socket data if no file is specified.
-			Nothing if there is a file specified.
-
-		Raises:
-			SocketClosedError: If the socket is closed before the full message
-				is received.
-		"""
-		written = 0
-		message = b''
-		while written < length:
-			if len(self.buffer) >= (length - written):
-				seg, self.buffer = (self.buffer[:length], self.buffer[length:])
-				if file:
-					file.write(seg)
-					return
-				return message + seg
-			if file:
-				file.write(self.buffer)
-			else:
-				message += self.buffer
-			written += len(self.buffer)
-			self.buffer = self.request.recv(sshed.BUFFER_SIZE)
-			if len(self.buffer) == 0:
-				raise SocketClosedError()
-		raise Exception(
-			'Please file a bug in sshed. '
-			'sshed_client.SocketRequestHandler.get_bytes should never terminate'
-			'its loop.')
+	def setup(self):
+		packethandler.PacketHandler.__init__(self, self.request)
 
 	def send_diff(self, original_filename, editing_filename):
 		"""Get the different between to files and send it over the socket."""
@@ -129,71 +73,90 @@ class SocketRequestHandler(socketserver.BaseRequestHandler):
 			self.request.sendall(file.read())
 		os.remove(editing_name)
 
-	def get_file(self):
-		"""Retrieve the file and place it into two local temp files."""
-		with tempfile.NamedTemporaryFile(
-			  prefix='%s_orig_' % self.headers['Filename'],
-			  delete=False) as original_file:
-			self.get_bytes(self.length, file=original_file)
-			original_file.seek(0)
-			with tempfile.NamedTemporaryFile(
-				  prefix='%s_' % self.headers['Filename'],
-				  delete=False) as editing_file:
-				shutil.copyfileobj(original_file, editing_file)
-				original_file.seek(0)
-				logging.debug(
-					'Start of original file: %s',
-					original_file.read(128))
-				editing_file.seek(0)
-				logging.debug(
-					'Start of editing file: %s',
-					editing_file.read(128))
-		self.original_name = original_file.name
-		self.editing_name = editing_file.name
+	def duplicate_file(self, original, *args,
+			filetype=tempfile.NamedTemporaryFile, **kwargs):
+		"""Return a file that duplicates the file passed in.
 
-	def get_headers(self):
-		"""Return the next set of headers read from the socket.
+		Positional arguments:
+			original: a file-like object containing the original file.
+			*args: positional arguments to pass to the object constructor.
+		Keyword arguments:
+			filetype: The class of file object to create.
+			**kwargs: Keyword arguments to pass to the object constructor.
 
-		Each transfer should include at least a set of headers, and potentially
-		content. If the transfer includes content, it must include a "Size"
-		header to determine the length (in bytes) of the content.
+		Returns: An object of the time passed in filetype that uses the file
+			interface to duplicate the original.
 		"""
-		headers = {}
+		location = original.tell()
+		original.seek(0)
+		copy = filetype(*args, **kwargs)
+		shutil.copyfileobj(original, copy)
+		copy.seek(0)
+		original.seek(location)
+		return copy
+
+	def wait_until_edit_or_exit(self, filename, modified_time, process,
+			sleep_time=0.1):
+		"""Wait until a file is edited or a process exits.
+
+		Positional arguments:
+			filename: The path to the file to check.
+			modified_time: The last modified time against which to check.
+			process: The process whose termination we're awaiting.
+		Keyword arguments:
+			sleep_time: Amount of time in seconds to sleep between checks.
+		Returns:
+			True if the file is edited; False if the process exits.
+		"""
 		while True:
-			line = self.get_line()
-			if line == b'':
-				break
-			name, contents = line.split(b':')
-			headers[name.decode().strip()] = contents.decode().strip()
-		logging.debug('Headers: %s', headers)
-		return headers
+			if process.poll() is not None:
+				return
+			if os.path.getmtime(filename) > modified_time:
+				return
+			time.sleep(sleep_time)
 
 
 	def handle(self):
 		"""Handle the socket request."""
-		self.headers = self.get_headers()
-		if self.headers['Version'] not in self.PROTOCOL_VERSIONS:
+		original = tempfile.SpooledTemporaryFile(max_size=FOUR_MEGS)
+		headers = self.get(file=original)
+		if headers.get('Version') not in self.PROTOCOL_VERSIONS:
 			logging.error('Unknown protocol version. Dropping connection.')
-			logging.error('Protocol version requested: %s',
-			              self.headers['Version'])
+			logging.error('Protocol version requested: %s', headers['Version'])
 			return
-		logging.debug('File to edit: %s', self.headers['Filename'])
-		try:
-			self.length = int(self.headers['Filesize'])
-		except ValueError:
-			# If we receive invalid data, simply drop the connection.
-			logging.error('Cannot convert size to integer: %s',
-			              self.headers['Filesize'])
-			return
-		logging.debug('Length of file (in bytes): %d', self.length)
-
-		self.get_file()
+		self.version = headers.get('Version')
+		self.differential = headers.get('Differential')
+		editing = self.duplicate_file(original, prefix=headers['Filename'],
+				delete=False)
+		editing.close()
+		logging.debug('File to edit: %s', headers['Filename'])
+		logging.debug('Text editor will open: %s', editing.name)
 		editor = sshed.choose_editor()
-		if not self.headers.get('Differential'):
-			subprocess.call(editor + [self.editing_name])
-			self.simple_respond(self.original_name, self.editing_name)
-			return
-		map(os.remove, (self.original_name, self.editing_name))
+		logging.debug('Text editor: %s', editor)
+		last_modified = os.path.getmtime(editing.name)
+		editor = subprocess.Popen(editor + [editing.name])
+
+		repeat = True
+		while repeat:
+			self.wait_until_edit_or_exit(editing.name, last_modified, editor)
+			if last_modified >= os.path.getmtime(editing.name):
+				break
+			last_modified = os.path.getmtime(editing.name)
+			with open(editing.name, 'rb') as editing:
+				temporary_file = self.duplicate_file(
+					editing, filetype=tempfile.SpooledTemporaryFile,
+					max_size=FOUR_MEGS)
+			original.seek(0)
+			original_lines = original.readlines()
+			edited_lines = temporary_file.readlines()
+			if original_lines == edited_lines:
+				continue
+			logging.debug('File has changed.')
+			logging.debug('New file: %s', edited_lines)
+			# TODO: differential editing
+			self.send({'Differential': 'False'}, temporary_file)
+			original = temporary_file
+		os.remove(editing.name)
 
 
 class EnvironmentVarible(object):
