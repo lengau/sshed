@@ -1,6 +1,0 @@
-#!/bin/bash
-# A quick command that forwards SSHEdit without needing to make any changes
-# on the remote machine.
-# The only argument (but a required argument) is the remote machine name.
-
-ssh -t -R $SSHED_SOCK:$SSHED_SOCK $1 SSHED_SOCK=$SSHED_SOCK $SHELL
