@@ -40,6 +40,7 @@ Eventually, the installation process will look similar to the following:
 2. In ~/.ssh/config, add a SendEnv line that sends "SSHED_SOCK".
    See the note below.
 3. Add sshed_client to run like ssh-agent does.
-4. If the host has sshed installed, simply ssh to the host and use sshed
-5. If sshed is not installed on the host, use edssh to SSH in.
 
+At that point, if the host has sshed installed, it should work seamlessly.
+If not, the user can run edssh to connect to the server, which will install
+the host side of edssh for the user to use.
