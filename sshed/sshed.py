@@ -11,11 +11,12 @@ import subprocess
 import sys
 import tempfile
 
-import packethandler
+from sshed import packethandler
 
 
 # TODO: Use modes from the stat library.
 USER_ONLY_UMASK = 0o177
+USER_ONLY_DIRECTORY_UMASK = 0o077
 LOGGING_FORMAT = '%(levelname)s: %(message)s'
 
 
@@ -134,7 +135,6 @@ def write_diff(headers, diff, file):
 	output_lines.extend(file.readlines())
 	file.seek(0)
 	file.writelines(output_lines)
-
 
 
 def main():

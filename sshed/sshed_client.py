@@ -16,8 +16,7 @@ import sys
 import tempfile
 import time
 
-import packethandler
-import sshed
+from sshed import packethandler, sshed
 
 FOUR_MEGS = 4*2**20
 
@@ -28,9 +27,6 @@ class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 	edit multiple files from one or more SSH sessions.
 	"""
 	pass
-
-
-
 
 
 class SocketRequestHandler(socketserver.BaseRequestHandler,
@@ -277,15 +273,16 @@ def parse_arguments():
 	return args
 
 
-def main(args):
+def main(args=None):
+	if args == None:
+		args = parse_arguments()
 	logging.basicConfig(format=sshed.LOGGING_FORMAT, level=args.logging_level)
-	os.umask(sshed.USER_ONLY_UMASK)
+	os.umask(sshed.USER_ONLY_DIRECTORY_UMASK)
 	sshed_dir = tempfile.TemporaryDirectory(prefix='sshed-')
-	socket_address = args.socket_address or sshed_dir.name
+	os.umask(sshed.USER_ONLY_UMASK)
+	socket_address = args.socket_address or (sshed_dir.name + '/socket')
 	socket_var = EnvironmentVarible('SSHED_SOCK', socket_address)
 	print(socket_var.generate(args.shell))
-	if socket_address == sshed_dir.name:
-		socket_address += '/socket'
 	server = SocketServer(socket_address, SocketRequestHandler)
 	logging.debug('Socket opened at %s. Serving requests.', socket_address)
 	try:

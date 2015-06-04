@@ -1,14 +1,21 @@
-from distutils.core import setup
+from setuptools import setup, find_packages
 
 setup(
 	name='sshed',
-	packages = ['sshed'],
+	packages = find_packages(),
 	version = '0.1',
 	description = 'Use a local text editor to edit remote files over SSH.',
 	author = 'Alex M. Lowe',
 	author_email = 'amlowe@ieee.org',
+	license = 'GNU GPLv3',
 	url = 'https://github.com/lengau/sshed',
 	keywords = ['ssh', 'editor', 'text'],
+	entry_points = {
+		'console_scripts': [
+			'sshed_client = sshed.sshed_client:main',
+			'sshed = sshed.sshed:main',
+			'edssh = sshed.edssh:main'],
+		},
 	classifiers = [
 		'Development Status :: 3 - Alpha',
 		'Environment :: Console',
