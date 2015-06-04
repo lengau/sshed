@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-	name='sshed',
+	name='sshedit',
 	packages = find_packages(),
-	version = '0.1',
+	version = '0.1.1',
 	description = 'Use a local text editor to edit remote files over SSH.',
 	author = 'Alex M. Lowe',
 	author_email = 'amlowe@ieee.org',
@@ -42,5 +42,5 @@ drop-in editor process on the host side.
 NOTE: Right now, SSHEd requires a bit of manual work to install. Full
 installation instructions are included in the README file distributed with
 sshed.
-"""
+""",
 	)
