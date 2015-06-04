@@ -16,6 +16,9 @@ BOTH HOST AND CLIENT:
     in OpenSSH terms). The requirement for OpenSSH >= 6.7 is because it
     introduces socket forwarding: http://lwn.net/Articles/609321/
 
+FOR INSTALLATION:
+* setuptools (for Debian/Ubuntu: python3-setuptools)
+
 
 SSH SESSION:
 You need to forward the sshed socket to the remote server. To do that, we

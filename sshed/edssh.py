@@ -12,7 +12,6 @@ import logging
 import os
 import subprocess
 import sys
-import threading
 
 from sshed import sshed, sshed_client
 
@@ -80,7 +79,7 @@ class SshClient(object):
 				return True
 		return False
 
-	def run(self):
+	def run(self, arguments):
 		"""Run the SSH client in its own thread."""
 		os.execv(
 			#'/bin/echo',
@@ -89,23 +88,22 @@ class SshClient(object):
 				os.path.basename(self.executable),
 				'-R', ':'.join((self.socket, self.socket)),
 				'-t',
-				'terra',  # TODO: SSH to any machine.
+			] + arguments + [
 				'SSHED_SOCK=%s ' % self.socket,
 				os.environ.get('SHELL', 'bash'),
 			])
 
 
-class SshedClient(threading.Thread):
-	"""An SSHEd client."""
-	def run(self):
-		# TODO: Run the SSHEd client
-		pass
-
-
 def main():
 	logging.basicConfig(format=sshed.LOGGING_FORMAT)
-	# TODO: Allow the user to determine the SSH version.
-	client = SshClient()
+	if '--client' in sys.argv:
+		client_index = sys.argv.index('--client')
+		client_name = sys.argv[client_index + 1]
+		for _ in range(2):
+			sys.argv.pop(client_index)
+	else:
+		client_name = 'ssh'
+	client = SshClient(executable=client_name)
 	if not client.is_valid():
 		logging.error(
 			'Invalid SSH client version: %s %s', client.project, client.version)
@@ -113,6 +111,6 @@ def main():
 		sys.exit(1)
 	client.socket = sshed.find_socket()
 	if client.socket is None:
-		# TODO: Open an SSHEd client in another thread.
+		# TODO: Open SSHEd client in another process.
 		raise NotImplementedError("Can't find an existing sshed socket.")
-	client.run()
+	client.run(sys.argv[1:])
