@@ -23,6 +23,7 @@ import os
 
 BUFFER_SIZE = 4096
 
+
 class SocketClosedError(Exception):
 	"""An error to be raised when a socket is unexpectedly closed."""
 	pass
@@ -46,10 +47,10 @@ class PacketHandler(object):
 			a bytes object containing the data.
 		"""
 		headers = self._get_headers()
-		data = self._get_bytes(headers.get('Size', 0), data=data_file)
-		if data is None:
-			return headers
-		return (headers, data)
+		data = self._get_bytes(headers.get('Size', 0), data_file=data_file)
+		if data_file is None:
+			return (headers, data)
+		return headers
 
 	def _get_headers(self):
 		"""Retrieve the headers of a packet.
@@ -70,21 +71,32 @@ class PacketHandler(object):
 		raw_headers = raw_headers.decode('utf-8').split('\n')
 		headers = {}
 		for header in raw_headers:
-			name, contents = [str.strip(x) for x in header.split(':')]
+			name, contents = [str.strip(x) for x in header.split(':', 1)]
 			if name.startswith('"') and name.endswith('"'):
 				name = name[1:-1]
-			if contents.startswith('"') and contents.endswith('"'):
-				contents = contents[1:-1]
 			try:
 				contents = int(contents)
 			except ValueError:
 				pass
+			else:
+				headers[name] = contents
+				continue
+			try:
+				contents = float(contents)
+			except ValueError:
+				pass
+			else:
+				headers[name] = contents
+				continue
 			if contents in self.STRING_TO_BOOL:
 				contents = self.STRING_TO_BOOL[contents]
+			else:
+				if contents.startswith('"') and contents.endswith('"'):
+					contents = contents[1:-1]
 			headers[name] = contents
 		return headers
 
-	def _get_bytes(self, length, data=None):
+	def _get_bytes(self, length, data_file=None):
 		"""Get the specified number of bytes from the socket.
 
 		Return the specified number of bytes from the socket unless the file
@@ -110,13 +122,13 @@ class PacketHandler(object):
 		while written < length:
 			if len(self.buffer) >= (length - written):
 				seg, self.buffer = (self.buffer[:length], self.buffer[length:])
-				if data:
-					data.write(seg)
-					data.truncate()
+				if data_file:
+					data_file.write(seg)
+					data_file.truncate()
 					return
 				return message + seg
-			if data:
-				data.write(self.buffer)
+			if data_file:
+				data_file.write(self.buffer)
 			else:
 				message += self.buffer
 			written += len(self.buffer)
