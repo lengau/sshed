@@ -2,7 +2,7 @@
 """Tests for packethandler"""
 
 import copy
-import mock
+from unittest import mock
 import tempfile
 import unittest
 
@@ -28,7 +28,7 @@ class TestGetHeaders(unittest.TestCase):
 			self.handler._get_headers()
 		self.socket.recv.assert_called_once_with(4096)
 
-	def testSocketClosedNoHeaders(self):
+	def testSocketClosedDuringHeaders(self):
 		"""Raise a SocketClosedError when the socket closes during headers."""
 		self.socket.recv.side_effect = data.SOCKET_WITH_PARTIAL_HEADERS
 		with self.assertRaises(packethandler.SocketClosedError):

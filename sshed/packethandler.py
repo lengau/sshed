@@ -138,10 +138,6 @@ class PacketHandler(object):
 			self.buffer = self.socket.recv(BUFFER_SIZE)
 			if len(self.buffer) == 0:
 				raise SocketClosedError()
-		raise Exception(
-			'Please file a bug in sshed. '
-			'packethandler.PacketHandler._get_bytes should never terminate'
-			'its loop.')
 
 	@classmethod
 	def _generate_header_bytes(cls, name, contents):
