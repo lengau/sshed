@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
+"""Host side sshed script.
+
+Designed to be run as "sshed" on the host side in place of a text editor.
+"""
 
 import argparse
 import logging
 import os
-import platform
 import shutil
 import socket
 import stat
 import subprocess
 import sys
-import tempfile
 
 from sshed import packethandler
 
@@ -21,6 +23,7 @@ LOGGING_FORMAT = '%(levelname)s: %(message)s'
 
 
 def parse_arguments():
+	"""Parse the arguments in the script and return an argument namespace."""
 	parser = argparse.ArgumentParser()
 	parser.add_argument('file')
 	parser.add_argument(
@@ -36,27 +39,33 @@ def parse_arguments():
 
 def choose_editor():
 	"""Choose an editor to use."""
-	editor = (os.environ.get('EDITOR') or os.environ.get('VISUAL') or
-	          os.environ.get('SUDO_EDITOR'))
+	editor = (
+		os.environ.get('EDITOR') or os.environ.get('VISUAL') or
+		os.environ.get('SUDO_EDITOR'))
 	if not editor or 'sshed' in editor:
-		editor = (shutil.which('sensible-editor') or shutil.which('xdg-open') or
-		          shutil.which('nano') or shutil.which('ed'))
+		editor = (
+			shutil.which('sensible-editor') or shutil.which('xdg-open') or
+			shutil.which('nano') or shutil.which('ed'))
 	logging.debug('Chosen editor: %s', editor)
 	return editor.split()
 
 
+# TODO: Detect a Mir session.
+# TODO (issue 2): Detect a graphical session in Windows.
+GRAPHICAL_VARIABLES = [
+	'DISPLAY',  # X11
+	'WAYLAND_DISPLAY',  # Wayland
+	'TERM_PROGRAM', ]  # OS X
+
+
 def graphical_session():
 	"""Return whether the current session is graphical."""
-	#TODO: Detect a Mir session.
-	#TODO (issue 2): Detect a graphical session in Windows.
-	GRAPHICAL_VARIABLES = [
-		'DISPLAY',  # X11
-		'WAYLAND_DISPLAY',  # Wayland
-		'TERM_PROGRAM',  # OS X
-		]
-	return True in map(bool, map(os.environ.get, GRAPHICAL_VARIABLES))
+	graphical_variable_data = [
+		bool(os.environ.get(variable)) for variable in GRAPHICAL_VARIABLES]
+	return True in graphical_variable_data
 
 
+# pylint: disable=too-many-return-statements
 def find_socket(socket_address=None):
 	"""Return the path to the socket file to use, or None if unable."""
 	if not socket_address:
@@ -88,14 +97,15 @@ def find_socket(socket_address=None):
 	if not file_stats.st_uid == os.getuid():
 		logging.error('Socket is not owned by the current user.')
 		return None
-	if not stat.S_IMODE(file_stats.st_mode) == (stat.S_IRUSR|stat.S_IWUSR):
+	if not stat.S_IMODE(file_stats.st_mode) == (stat.S_IRUSR | stat.S_IWUSR):
 		logging.error('Socket access is too permissive.')
 		return None
 	logging.debug('Socket found: %s', socket_address)
 	return socket_address
+# pylint: enable=too-many-return-statements
 
 
-def write_diff(headers, diff, file):
+def write_diff(_, diff, file):
 	"""Update a file using a diff.
 
 	Positional arguments:
@@ -105,7 +115,6 @@ def write_diff(headers, diff, file):
 			written.
 	"""
 	file.seek(0)
-	filesize = headers.get('Filesize')
 	logging.debug('Diff file repeated below:\n%s', diff)
 	diff = diff.split('\n')
 	diff.pop(0)
@@ -119,7 +128,7 @@ def write_diff(headers, diff, file):
 			break
 		starting_line = int(diff.pop(0)[4:-2].split()[0].split(',')[0])
 		logging.debug('Moving to line %d.', starting_line)
-		while len(output_lines) < starting_line-1:
+		while len(output_lines) < starting_line - 1:
 			output_lines.append(file.readline())
 		logging.debug('Diff line: %s', diff[0])
 		if diff[0].startswith('+'):
@@ -138,6 +147,7 @@ def write_diff(headers, diff, file):
 
 
 def main():
+	"""Entry point for sshed command."""
 	args = parse_arguments()
 	logging.basicConfig(format=LOGGING_FORMAT, level=args.logging_level)
 	os.umask(USER_ONLY_UMASK)

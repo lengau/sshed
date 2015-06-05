@@ -1,0 +1,8 @@
+__pycache__
+.coverage
+.directory
+.kdev4
+.pybuild
+build
+dist
+*.egg-info

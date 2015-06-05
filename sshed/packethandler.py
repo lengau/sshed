@@ -1,20 +1,23 @@
+# -*- coding: utf-8 -*-
 #
 # Packet handler for SSHed
 # Copyright © 2015  Alex M. Lowe <lengau@gmail.com>
-# 
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
+"""Parser and writer for sshed packets.
+"""
 
 import os
 
@@ -27,23 +30,23 @@ class SocketClosedError(Exception):
 
 class PacketHandler(object):
 	"""Handles incoming packets and generates outgoing packets."""
-	STRING_TO_BOOL = {'True':True, 'False':False}
+	STRING_TO_BOOL = {'True': True, 'False': False}
 
 	def __init__(self, socket):
 		self.socket = socket
 		"""The socket on which the handler sends and receives packets."""
 		self.buffer = b''
 
-	def get(self, file=None):
+	def get(self, data_file=None):
 		"""Get a packet from the socket.
 
 		Returns:
-			A dictionary containing the headers if file is set.
-			If file is None, a tuple containing the headers dictionary and a
-			bytes object containing the data.
+			A dictionary containing the headers if data_file is set.
+			If data_file is None, a tuple containing the headers dictionary and
+			a bytes object containing the data.
 		"""
 		headers = self._get_headers()
-		data = self._get_bytes(headers.get('Size', 0), file=file)
+		data = self._get_bytes(headers.get('Size', 0), data=data_file)
 		if data is None:
 			return headers
 		return (headers, data)
@@ -67,7 +70,7 @@ class PacketHandler(object):
 		raw_headers = raw_headers.decode('utf-8').split('\n')
 		headers = {}
 		for header in raw_headers:
-			name, contents = map(str.strip, header.split(':'))
+			name, contents = [str.strip(x) for x in header.split(':')]
 			if name.startswith('"') and name.endswith('"'):
 				name = name[1:-1]
 			if contents.startswith('"') and contents.endswith('"'):
@@ -81,7 +84,7 @@ class PacketHandler(object):
 			headers[name] = contents
 		return headers
 
-	def _get_bytes(self, length, file=None):
+	def _get_bytes(self, length, data=None):
 		"""Get the specified number of bytes from the socket.
 
 		Return the specified number of bytes from the socket unless the file
@@ -91,7 +94,7 @@ class PacketHandler(object):
 			length: The length (in bytes) of the expected output.
 
 		Keyword arguments:
-			file: A file-like object into which to place the bytes.
+			data: A file-like object into which to place the bytes.
 				Specific methods required are write and tell.
 
 		Returns:
@@ -107,13 +110,13 @@ class PacketHandler(object):
 		while written < length:
 			if len(self.buffer) >= (length - written):
 				seg, self.buffer = (self.buffer[:length], self.buffer[length:])
-				if file:
-					file.write(seg)
-					file.truncate()
+				if data:
+					data.write(seg)
+					data.truncate()
 					return
 				return message + seg
-			if file:
-				file.write(self.buffer)
+			if data:
+				data.write(self.buffer)
 			else:
 				message += self.buffer
 			written += len(self.buffer)
@@ -125,7 +128,7 @@ class PacketHandler(object):
 			'packethandler.PacketHandler._get_bytes should never terminate'
 			'its loop.')
 
-	def send(self, headers, file=None):
+	def send(self, headers, contents=None):
 		"""Send data over the socket.
 
 		If a Size header exists, it will be overwritten by the sensed size of
@@ -133,19 +136,19 @@ class PacketHandler(object):
 
 		Positional arguments:
 			headers: A dictionary containing the headers to send.
-			file: A file-like object or a bytes object to send
+			contents: A file-like object or a bytes object to send
 		"""
-		if isinstance(file, bytes):
-			headers['Size'] = len(file)
+		if isinstance(contents, bytes):
+			headers['Size'] = len(contents)
 		else:
-			file.seek(0, os.SEEK_END)
-			headers['Size'] = file.tell()
-			file.seek(0, os.SEEK_SET)
+			contents.seek(0, os.SEEK_END)
+			headers['Size'] = contents.tell()
+			contents.seek(0, os.SEEK_SET)
 		for header in headers:
 			header_string = '%s: %s\n' % (header, headers[header])
 			self.socket.sendall(header_string.encode('utf-8'))
 		self.socket.sendall(b'\n')
-		if isinstance(file, bytes):
-			self.socket.sendall(file)
+		if isinstance(contents, bytes):
+			self.socket.sendall(contents)
 		else:
-			self.socket.sendall(file.read())
+			self.socket.sendall(contents.read())

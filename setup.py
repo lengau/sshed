@@ -1,22 +1,23 @@
+#!/usr/bin/env python3
 from setuptools import setup, find_packages
 
 setup(
 	name='sshedit',
-	packages = find_packages(),
-	version = '0.1.1',
-	description = 'Use a local text editor to edit remote files over SSH.',
-	author = 'Alex M. Lowe',
-	author_email = 'amlowe@ieee.org',
-	license = 'GNU GPLv3',
-	url = 'https://github.com/lengau/sshed',
-	keywords = ['ssh', 'editor', 'text'],
-	entry_points = {
+	packages=find_packages(exclude='test'),
+	version='0.1.1',
+	description='Use a local text editor to edit remote files over SSH.',
+	author='Alex M. Lowe',
+	author_email='amlowe@ieee.org',
+	license='GNU GPLv3',
+	test_suite='test',
+	url='https://github.com/lengau/sshed',
+	keywords=['ssh', 'editor', 'text'],
+	entry_points={
 		'console_scripts': [
 			'sshed_client = sshed.sshed_client:main',
 			'sshed = sshed.sshed:main',
-			'edssh = sshed.edssh:main'],
-		},
-	classifiers = [
+			'edssh = sshed.edssh:main'], },
+	classifiers=[
 		'Development Status :: 3 - Alpha',
 		'Environment :: Console',
 		'Environment :: X11 Applications',
@@ -27,9 +28,8 @@ setup(
 		'Operating System :: Unix',
 		'Programming Language :: Python',
 		'Programming Language :: Python :: 3',
-		'Topic :: Text Editors',
-		],
-	long_description = """\
+		'Topic :: Text Editors', ],
+	long_description="""\
 Text editing over SSH helper
 ----------------------------
 
@@ -42,5 +42,4 @@ drop-in editor process on the host side.
 NOTE: Right now, SSHEd requires a bit of manual work to install. Full
 installation instructions are included in the README file distributed with
 sshed.
-""",
-	)
+""")

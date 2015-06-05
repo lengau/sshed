@@ -13,13 +13,13 @@ import os
 import subprocess
 import sys
 
-from sshed import sshed, sshed_client
+from . import sshed
 
 
 class SshClient(object):
 	"""An SSH client."""
 
-	def __init__(self, executable='ssh'):
+	def __init__(self, executable='ssh', socket=None):
 		super().__init__()
 		self.executable = find_executable(executable)
 		executables = ['ssh', 'dbclient']
@@ -27,6 +27,10 @@ class SshClient(object):
 			self.executable = find_executable(executables.pop(0))
 		if self.executable is None:
 			raise ValueError('Could not find your SSH client.')
+		self.__version = None
+		self.__project = None
+		self.client_data()
+		self.socket = socket
 
 	SSH_PROJECTS = {
 		'OpenSSH': ['6.7'],
@@ -36,20 +40,12 @@ class SshClient(object):
 	@property
 	def version(self):
 		"""The version of the SSH client."""
-		try:
-			return self.__version
-		except AttributeError:
-			self.client_data()
-			return self.__version
+		return self.__version
 
 	@property
 	def project(self):
 		"""The project this client is attached to."""
-		try:
-			return self.__project
-		except AttributeError:
-			self.client_data()
-			return self.__project
+		return self.__project
 
 	def client_data(self):
 		"""Return client executable, project, and version.
@@ -82,7 +78,7 @@ class SshClient(object):
 	def run(self, arguments):
 		"""Run the SSH client in its own thread."""
 		os.execv(
-			#'/bin/echo',
+			# '/bin/echo',
 			self.executable,
 			[
 				os.path.basename(self.executable),
@@ -95,6 +91,13 @@ class SshClient(object):
 
 
 def main():
+	"""Entry point for edssh.
+
+	Parses the '--client' argument if set, generates a client object, and then
+	executes the client.
+
+	TODO: start sshed if necessary.
+	"""
 	logging.basicConfig(format=sshed.LOGGING_FORMAT)
 	if '--client' in sys.argv:
 		client_index = sys.argv.index('--client')

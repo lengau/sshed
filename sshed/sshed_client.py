@@ -18,7 +18,7 @@ import time
 
 from sshed import packethandler, sshed
 
-FOUR_MEGS = 4*2**20
+FOUR_MEGS = 4 * 2 ** 20
 
 
 class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -29,12 +29,53 @@ class SocketServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 	pass
 
 
-class SocketRequestHandler(socketserver.BaseRequestHandler,
-	                       packethandler.PacketHandler):
+def duplicate_file(original, filetype=tempfile.NamedTemporaryFile, **kwargs):
+	"""Return a file that duplicates the file passed in.
+
+	Positional arguments:
+		original: a file-like object containing the original file.
+	Keyword arguments:
+		filetype: The class of file object to create.
+		**kwargs: Keyword arguments to pass to the object constructor.
+
+	Returns: An object of the time passed in filetype that uses the file
+		interface to duplicate the original.
+	"""
+	location = original.tell()
+	original.seek(0)
+	copy = filetype(**kwargs)
+	shutil.copyfileobj(original, copy)
+	copy.seek(0)
+	original.seek(location)
+	return copy
+
+
+def wait_until_edit_or_exit(filename, modified_time, process, sleep_time=0.1):
+	"""Wait until a file is edited or a process exits.
+
+	Positional arguments:
+		filename: The path to the file to check.
+		modified_time: The last modified time against which to check.
+		process: The process whose termination we're awaiting.
+	Keyword arguments:
+		sleep_time: Amount of time in seconds to sleep between checks.
+	Returns:
+		True if the file is edited; False if the process exits.
+	"""
+	while True:
+		if process.poll() is not None:
+			return
+		if os.path.getmtime(filename) > modified_time:
+			return
+		time.sleep(sleep_time)
+
+
+class SocketRequestHandler(
+	socketserver.BaseRequestHandler, packethandler.PacketHandler):
 	"""
 	A socket request handler. Handles a single file edit request.
 	"""
-	PROTOCOL_VERSIONS = range(1,2)
+	PROTOCOL_VERSIONS = (1, )
 	"""Accepted (known) protocol versions.
 
 	A more detailed description of protocol versions is found in the PROTOCOL.md
@@ -43,15 +84,6 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 
 	def setup(self):
 		packethandler.PacketHandler.__init__(self, self.request)
-
-	def send_diff(self, original_filename, editing_filename):
-		"""Get the different between to files and send it over the socket."""
-		with open(original_filename, 'rb') as original:
-			original_lines = original.readlines()
-		with open(editing_filename, 'rb') as edited:
-			edited_lines = edited.readlines()
-		diff = difflib.ndiff(original_lines, edited_lines)
-		self.request.sendall()
 
 	def simple_respond(self, original_name, editing_name):
 		"""Generate a response replying with the entire file.
@@ -69,60 +101,20 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 			self.request.sendall(file.read())
 		os.remove(editing_name)
 
-	def duplicate_file(self, original, filetype=tempfile.NamedTemporaryFile,
-		               **kwargs):
-		"""Return a file that duplicates the file passed in.
-
-		Positional arguments:
-			original: a file-like object containing the original file.
-		Keyword arguments:
-			filetype: The class of file object to create.
-			**kwargs: Keyword arguments to pass to the object constructor.
-
-		Returns: An object of the time passed in filetype that uses the file
-			interface to duplicate the original.
-		"""
-		location = original.tell()
-		original.seek(0)
-		copy = filetype(**kwargs)
-		shutil.copyfileobj(original, copy)
-		copy.seek(0)
-		original.seek(location)
-		return copy
-
-	def wait_until_edit_or_exit(self, filename, modified_time, process,
-		                        sleep_time=0.1):
-		"""Wait until a file is edited or a process exits.
-
-		Positional arguments:
-			filename: The path to the file to check.
-			modified_time: The last modified time against which to check.
-			process: The process whose termination we're awaiting.
-		Keyword arguments:
-			sleep_time: Amount of time in seconds to sleep between checks.
-		Returns:
-			True if the file is edited; False if the process exits.
-		"""
-		while True:
-			if process.poll() is not None:
-				return
-			if os.path.getmtime(filename) > modified_time:
-				return
-			time.sleep(sleep_time)
-
-
 	def handle(self):
 		"""Handle the socket request."""
 		original = tempfile.SpooledTemporaryFile(max_size=FOUR_MEGS)
-		headers = self.get(file=original)
+		headers = self.get(data_file=original)
 		if headers.get('Version') not in self.PROTOCOL_VERSIONS:
 			logging.error('Unknown protocol version. Dropping connection.')
 			logging.error('Protocol version requested: %s', headers['Version'])
 			return
+		# pylint: disable=attribute-defined-outside-init
 		self.version = headers.get('Version')
 		self.differential = headers.get('Differential')
-		editing = self.duplicate_file(original, prefix=headers['Filename'],
-				delete=False)
+		# pylint: enable=attribute-defined-outside-init
+		editing = duplicate_file(
+			original, prefix=headers['Filename'], delete=False)
 		editing.close()
 		logging.debug('File to edit: %s', headers['Filename'])
 		logging.debug('Text editor will open: %s', editing.name)
@@ -133,12 +125,12 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 
 		repeat = True
 		while repeat:
-			self.wait_until_edit_or_exit(editing.name, last_modified, editor)
+			wait_until_edit_or_exit(editing.name, last_modified, editor)
 			if last_modified >= os.path.getmtime(editing.name):
 				break
 			last_modified = os.path.getmtime(editing.name)
 			with open(editing.name, 'rb') as editing:
-				temporary_file = self.duplicate_file(
+				temporary_file = duplicate_file(
 					editing, filetype=tempfile.SpooledTemporaryFile,
 					max_size=FOUR_MEGS)
 			original.seek(0)
@@ -149,8 +141,9 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 			logging.debug('File has changed.')
 			logging.debug('New file: %s', edited_lines)
 			# TODO: differential editing
-			if (not self.differential or
-			    not self.send_diff(original_lines, edited_lines)):
+			if (
+				not self.differential or
+				not self.send_diff(original_lines, edited_lines)):
 				self.send({'Differential': 'False'}, temporary_file)
 			original = temporary_file
 		os.remove(editing.name)
@@ -176,21 +169,20 @@ class SocketRequestHandler(socketserver.BaseRequestHandler,
 		logging.debug('Diff bytes: %s', diff_bytes)
 		logging.debug('Generated diff:\n%s', diff_bytes.decode())
 		if len(diff_bytes) > edited_length:
-			logging.debug('Diff is longer than edited file. '
-			              'Sending file instead.')
+			logging.debug(
+				'Diff is longer than edited file. Sending file instead.')
 			return False
 		else:
 			headers = dict(
 				Differential=True,
 				Filesize=edited_length
 				# TODO: Add checksum of edited here.
-				)
+			)
 			self.send(headers, diff_bytes)
 		return True
 
 
-
-class EnvironmentVarible(object):
+class EnvironmentVarible(object):  # pylint: disable=too-few-public-methods
 	"""Environment variable exporter.
 
 	Generates specialised commands for exporting environment variables in a
@@ -201,6 +193,7 @@ class EnvironmentVarible(object):
 		'fish': 'setenv {name} {contents}',
 		'bash': 'export {name}={contents}',
 	}
+
 	def __init__(self, name, contents):
 		self.name = name
 		self.contents = contents
@@ -240,16 +233,17 @@ def parse_arguments():
 
 	shell_group = parser.add_argument_group(
 		title='Shell choice arguments',
-		description=('Arguments that allow manually specifying the shell '
-		             'for which to generate the commands to set environment '
-		             'variables.'))
+		description=(
+			'Arguments that allow manually specifying the shell for which to '
+			'generate the commands to set environment variables.'))
 	shell = shell_group.add_mutually_exclusive_group()
 	shell.add_argument(
 		'--shell',
 		default=None,
-		help=('Specify the shell for which to write commands. Default is to '
-		      'detect from the SHELL environment variable or (if undetected) '
-		      'fall back to bash.'))
+		help=(
+			'Specify the shell for which to write commands. Default is to '
+			'detect from the SHELL environment variable or (if undetected) '
+			'fall back to bash.'))
 	shell.add_argument(
 		'-b', '--bash', action='store_const',
 		dest='shell', const='bash',
@@ -274,7 +268,8 @@ def parse_arguments():
 
 
 def main(args=None):
-	if args == None:
+	"""Entry point for sshed_client."""
+	if args is None:
 		args = parse_arguments()
 	logging.basicConfig(format=sshed.LOGGING_FORMAT, level=args.logging_level)
 	os.umask(sshed.USER_ONLY_DIRECTORY_UMASK)
@@ -289,7 +284,6 @@ def main(args=None):
 		server.serve_forever()
 	except KeyboardInterrupt:
 		os.remove(socket_address)
-
 
 
 if __name__ == '__main__':
