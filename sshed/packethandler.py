@@ -41,6 +41,9 @@ class PacketHandler(object):
 	def get(self, data_file=None):
 		"""Get a packet from the socket.
 
+		Named arguments:
+			data_file: A file-like object into which to put the data.
+
 		Returns:
 			A dictionary containing the headers if data_file is set.
 			If data_file is None, a tuple containing the headers dictionary and
@@ -140,6 +143,34 @@ class PacketHandler(object):
 			'packethandler.PacketHandler._get_bytes should never terminate'
 			'its loop.')
 
+	@classmethod
+	def _generate_header_bytes(cls, name, contents):
+		"""Generate a bytes object that is a line to send as headers.
+
+		Positional arguments:
+			name: The header name as a string.
+			contents: The header contents.
+
+		Returns:
+			a bytes object containing a utf-8 encoded header line.
+		"""
+		if name[0].isspace() or name[-1].isspace():
+			name = '"%s"' % name
+		if isinstance(contents, str):
+			if contents[0].isspace() or contents[-1].isspace():
+				contents = '"%s"' % contents
+			try:
+				float(contents)
+			except ValueError:
+				pass
+			else:
+				contents = '"%s"' % contents
+			if contents in cls.STRING_TO_BOOL:
+				contents = '"%s"' % contents
+		else:
+			contents = str(contents)
+		return ('%s: %s\n' % (name, contents)).encode('utf-8')
+
 	def send(self, headers, contents=None):
 		"""Send data over the socket.
 
@@ -150,16 +181,20 @@ class PacketHandler(object):
 			headers: A dictionary containing the headers to send.
 			contents: A file-like object or a bytes object to send
 		"""
-		if isinstance(contents, bytes):
+		if contents is None:
+			headers['Size'] = 0
+		elif isinstance(contents, bytes):
 			headers['Size'] = len(contents)
 		else:
 			contents.seek(0, os.SEEK_END)
 			headers['Size'] = contents.tell()
 			contents.seek(0, os.SEEK_SET)
 		for header in headers:
-			header_string = '%s: %s\n' % (header, headers[header])
-			self.socket.sendall(header_string.encode('utf-8'))
+			self.socket.sendall(
+				self._generate_header_bytes(header, headers[header]))
 		self.socket.sendall(b'\n')
+		if contents is None:
+			return
 		if isinstance(contents, bytes):
 			self.socket.sendall(contents)
 		else:
