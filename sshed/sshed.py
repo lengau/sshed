@@ -22,7 +22,7 @@ USER_ONLY_DIRECTORY_UMASK = 0o077
 LOGGING_FORMAT = '%(levelname)s: %(message)s'
 
 
-def parse_arguments():
+def parse_arguments(args=None):
 	"""Parse the arguments in the script and return an argument namespace."""
 	parser = argparse.ArgumentParser()
 	parser.add_argument('file')
@@ -34,7 +34,7 @@ def parse_arguments():
 		'-a', '--socketaddress',
 		dest='socket_address',
 		help='Use a specific socket file.')
-	return parser.parse_args()
+	return parser.parse_args(args=args)
 
 
 def choose_editor():
@@ -98,7 +98,9 @@ def find_socket(socket_address=None):
 		logging.error('Socket is not owned by the current user.')
 		return None
 	if not stat.S_IMODE(file_stats.st_mode) == (stat.S_IRUSR | stat.S_IWUSR):
-		logging.error('Socket access is too permissive.')
+		logging.error(
+			'Socket permissions are not valid. '
+			'Socket should be readable and writeable only by its owner.')
 		return None
 	logging.debug('Socket found: %s', socket_address)
 	return socket_address
