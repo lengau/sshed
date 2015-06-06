@@ -14,6 +14,9 @@ except ImportError:
 
 from sshed import sshed
 
+from data import diff1
+from data import hunks_data
+from data import malformed_diffs
 
 class TestParseArguments(unittest.TestCase):
 	"""Tests for sshed.parse_arguments."""
@@ -266,5 +269,45 @@ class TestFindSocket(unittest.TestCase):
 			'Socket should be readable and writeable only by its owner.')
 
 
+class testPatcher(unittest.TestCase):
+	"""Test Patcher's _get_hunks method."""
+
+	def testGetHunks(self):
+		"""Tests for Patcher._get_hunks."""
+		hunks = sshed.Patcher._get_hunks(hunks_data.FIRST_DIFF)
+		self.assertListEqual(hunks, hunks_data.FIRST_DIFF_HUNKS)
+
+	def testPatch(self):
+		"""Test full patches."""
+		with open(os.path.join(
+			os.path.dirname(os.path.realpath(__file__)),
+			'data/diff1_original.txt'), mode='rb') as original_file:
+			patcher = sshed.Patcher(original_file, diff1.DIFF)
+			self.assertEqual(
+				patcher.patch(),
+				diff1.FINAL)
+
+	def testMalformedRemove(self):
+		"""Test patch() with a bad removal line."""
+		with tempfile.SpooledTemporaryFile(max_size=8192) as original:
+			original.write(malformed_diffs.ORIGINAL)
+			original.seek(0)
+			patcher = sshed.Patcher(
+				original, malformed_diffs.MALFORMED_REMOVE_DIFF)
+			with self.assertRaises(sshed.MalformedDiff):
+				patcher.patch()
+
+	def testMalformedSame(self):
+		"""Test patch() with a bad removal line."""
+		with tempfile.SpooledTemporaryFile(max_size=8192) as original:
+			original.write(malformed_diffs.ORIGINAL)
+			original.seek(0)
+			patcher = sshed.Patcher(
+				original, malformed_diffs.MALFORMED_SAME_DIFF)
+			with self.assertRaises(sshed.MalformedDiff):
+				patcher.patch()
+
+
 if __name__ == "__main__":
+	# logging.basicConfig(level=logging.DEBUG)
 	unittest.main()

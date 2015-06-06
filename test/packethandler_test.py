@@ -8,7 +8,7 @@ import unittest
 
 from sshed import packethandler
 
-import packethandler_test_data as data
+from data import packethandler as data
 
 
 class TestGetHeaders(unittest.TestCase):

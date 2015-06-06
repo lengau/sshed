@@ -12,6 +12,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 
 from sshed import packethandler
 
@@ -107,45 +108,114 @@ def find_socket(socket_address=None):
 # pylint: enable=too-many-return-statements
 
 
-def write_diff(_, diff, file):
-	"""Update a file using a diff.
+class MalformedDiff(Exception):
+	"""The diff file handed to Patcher isn't valid."""
 
-	Positional arguments:
-		headers: a dictionary containing the packet headers.
-		diff: a bytes object containing the diff sent.
-		file: a file containing the original data. Also where the changes are
-			written.
-	"""
-	file.seek(0)
-	logging.debug('Diff file repeated below:\n%s', diff)
-	diff = diff.split('\n')
-	diff.pop(0)
-	diff.pop(0)
-	output_lines = []
-	while True:
-		try:
-			while not diff[0].startswith('@'):
+
+class Patcher(object):  # pylint: disable=too-few-public-methods
+	"""A patcher to patch a diff onto a file."""
+
+	def __init__(self, original, diff):
+		"""Initialise a Patcher.
+
+		Positional arguments:
+			original: A file-like object or list of lines with the original text
+			diff: A list of strings containing the unidiff difference.
+		"""
+		self.original = original
+		"""The original file as a file-like object."""
+		self.hunks = self._get_hunks(diff)
+		"""The difference as a list of hunks. Each hunk is a list of lines."""
+		super().__init__()
+
+	@classmethod
+	def _get_hunks(cls, diff):
+		"""Get a list of hunks from a list of unidiff lines.
+
+		Each hunk is a list of lines in the hunk.
+		Each line is a unicode string containing a line from a diff file.
+
+		Positional arguments:
+			diff: A list of lines in a unidiff format.
+
+		Returns:
+			A list of hunks as defined above.
+		"""
+		hunk = []
+		hunks = []
+		while len(diff) > 0:
+			if diff[0].startswith((b'---', b'+++')):
 				diff.pop(0)
-		except IndexError:
-			break
-		starting_line = int(diff.pop(0)[4:-2].split()[0].split(',')[0])
-		logging.debug('Moving to line %d.', starting_line)
-		while len(output_lines) < starting_line - 1:
-			output_lines.append(file.readline())
-		logging.debug('Diff line: %s', diff[0])
-		if diff[0].startswith('+'):
-			logging.debug('Inserting line: %s', diff[0])
-			output_lines.append(diff.pop(0)[1:])
-		elif diff[0].startswith(' '):
-			logging.debug('Identical lines')
-			diff.pop(0)
-			output_lines.append(file.readline())
-		elif diff[0].startswith('-'):
-			logging.debug('Removing line: %s', diff[0])
-			file.readline()
-	output_lines.extend(file.readlines())
-	file.seek(0)
-	file.writelines(output_lines)
+				continue
+			if diff[0].startswith(b'@@'):
+				if hunk != []:
+					hunks.append(hunk)
+					hunk = []
+			hunk.append(diff.pop(0))
+		if hunk != []:
+			hunks.append(hunk)
+		return hunks
+
+	def patch(self, output=None):
+		"""Patch the original file to the output.
+
+		Named arguments:
+			output: A file-like object to write the output to or None.
+
+		Returns:
+			The post-diff file as a single string if output is None
+		"""
+		if output is None:
+			return_data = True
+			output = tempfile.SpooledTemporaryFile(max_size=2 ** 20)
+		else:
+			output.seek(0)
+			return_data = False
+		line_number = 1
+		logging.debug('Hunks: %s', self.hunks)
+		for hunk in self.hunks:
+			header = hunk[0]
+			start_line = header.split()[1][1:]
+			if b',' in start_line:
+				start_line = start_line.split(b',')[0]
+			start_line = int(start_line)
+			logging.debug('Start line: %s', start_line)
+			while line_number < start_line:
+				line = self.original.readline()
+				line_number += 1
+				logging.debug('Unchanged line: %s', line)
+				output.write(line)
+			for line in hunk[1:]:
+				logging.debug('Handling diff line: %s', line)
+				if line.startswith(b'-'):
+					original_line = self.original.readline()
+					line_number += 1
+					if original_line != line[1:]:
+						raise MalformedDiff(
+							'Removed a line from the wrong location.\n'
+							'Original line: %s'
+							'Diff line: %s' % (original_line, line))
+					logging.debug('Removed line: %s', original_line)
+					continue
+				if line.startswith(b' '):
+					original_line = self.original.readline()
+					line_number += 1
+					if original_line != line[1:]:
+						raise MalformedDiff(
+							'Claimed same line (line %d) was not the same.\n'
+							'Original line: %s'
+							'Diff line: %s' % (line_number, original_line, line))
+					logging.debug('Identical line: %s', original_line)
+					output.write(original_line)
+					continue
+				if line.startswith(b'+'):
+					logging.debug('Added line: %s', line[1:])
+					output.write(line[1:])
+		output.writelines(self.original.readlines())
+		output.truncate()
+		if return_data:
+			output.seek(0)
+			return output.read()
 
 
 def main():
@@ -176,7 +246,19 @@ def main():
 				logging.debug('Headers: %s', headers)
 				if headers.get('Differential') is True:
 					logging.debug('Differential editing enabled.')
-					write_diff(headers, edited.decode(), file)
+					diff = edited.splitlines(keepends=True)
+					logging.debug('Diff:\n%s', diff)
+					patcher = Patcher(file, diff)
+					logging.debug('Hunks:\n%s', patcher.hunks)
+					# TOOD: Handle the original and updated file better.
+					with tempfile.NamedTemporaryFile() as output:
+						patcher.patch(output=output)
+						output.seek(0)
+						logging.debug('Updated file: %s', output.read())
+						file.seek(0)
+						output.seek(0)
+						file.write(output.read())
+					file.truncate()
 				else:
 					logging.debug('Differential editing disabled.')
 					file.write(edited)
