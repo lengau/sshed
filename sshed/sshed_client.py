@@ -222,8 +222,13 @@ class EnvironmentVarible(object):  # pylint: disable=too-few-public-methods
 			name=self.name, contents=self.contents)
 
 
-def parse_arguments():
-	"""Parse the arguments handed into the program. Returns a namespace."""
+def parse_arguments(args=None):
+	"""Parse the arguments handed into the program and return a namespace.
+
+	Named arguments:
+		args: A list of strings containing the arguments. Only use this to
+			override the args in sys.argv.
+	"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument(
 		'-d', '--debug', action='store_const',
@@ -261,9 +266,9 @@ def parse_arguments():
 		'-a', '--socketaddress',
 		dest='socket_address',
 		help='Give the socket a specific filename.')
-	args = parser.parse_args()
+	args = parser.parse_args(args=args)
 	if not args.shell:
-		args.shell = os.path.basename(os.environ.get('SHELL')) or 'bash'
+		args.shell = os.path.basename(os.environ.get('SHELL', '')) or 'bash'
 	return args
 
 
