@@ -1,3 +1,4 @@
+# pylint: disable=missing-docstring, line-too-long
 FINAL = b"""\
 First line
 Line two.
