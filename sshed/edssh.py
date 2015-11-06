@@ -31,8 +31,10 @@ class SshClient(object):
         self.client_data()
         self.socket = socket
 
+    # TODO: Improve SSH version handling.
+    # TODO: If possible, figure out how to make a ">=" for projects.
     SSH_PROJECTS = {
-        'OpenSSH': ['6.7'],
+        'OpenSSH': ['6.7', '6.8', '6.9', '7.'],
         'Dropbear': None,
     }
 

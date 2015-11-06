@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for sshed.sshed"""
 
+from copy import copy
 import logging
 import os
 import socket
@@ -81,7 +82,8 @@ class TestChooseEditor(unittest.TestCase):
             'SUDO_EDITOR': 'sudo_editor'
         }
         with mock.patch.dict(os.environ, values=environment, clear=True):
-            self.assertEqual(sshed.choose_editor(), [environment['SUDO_EDITOR']])
+            self.assertEqual(sshed.choose_editor(),
+                             [environment['SUDO_EDITOR']])
 
     @mock.patch('shutil.which')
     def testEditorIsSensibleEditor(self, which):
@@ -278,12 +280,20 @@ class testPatcher(unittest.TestCase):
     def testPatch(self):
         """Test full patches."""
         with open(os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            'data/diff1_original.txt'), mode='rb') as original_file:
-            patcher = sshed.Patcher(original_file, diff1.DIFF)
-            self.assertEqual(
-                patcher.patch(),
-                diff1.FINAL)
+                os.path.dirname(os.path.realpath(__file__)),
+                'data/diff1_original.txt'), mode='rb') as original_file:
+            patcher = sshed.Patcher(original_file, copy(diff1.DIFF))
+            self.assertEqual(patcher.patch(), diff1.FINAL)
+
+    def testPatchToFile(self):
+        """Test full patches outputting to a file."""
+        with open(os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                'data/diff1_original.txt'), mode='rb') as original_file:
+            patcher = sshed.Patcher(original_file, copy(diff1.DIFF))
+            output_file = tempfile.SpooledTemporaryFile()
+            patcher.patch(output=output_file)
+            self.assertEqual(output_file.read(), diff1.FINAL)
 
     def testMalformedRemove(self):
         """Test patch() with a bad removal line."""
@@ -304,6 +314,22 @@ class testPatcher(unittest.TestCase):
                 original, malformed_diffs.MALFORMED_SAME_DIFF)
             with self.assertRaises(sshed.MalformedDiff):
                 patcher.patch()
+
+    def testPatchLateInFile(self):
+        """A patch that doesn't start on line 1."""
+        data_dir = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            'data')
+        with open(os.path.join(data_dir, 'diff_start_later.diff'),
+                  mode='rb') as diff_file:
+            diff = diff_file.readlines()
+        with open(os.path.join(data_dir, 'diff_start_later_original.txt'),
+                  mode='rb') as original:
+            patcher = sshed.Patcher(original, diff)
+            output = patcher.patch()
+        with open(os.path.join(data_dir, 'diff_start_later_final.txt'),
+                  mode='rb') as expected_file:
+            self.assertEqual(output, expected_file.read())
 
 
 if __name__ == "__main__":

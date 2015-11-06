@@ -71,7 +71,7 @@ def wait_until_edit_or_exit(filename, modified_time, process, sleep_time=0.1):
 
 
 class SocketRequestHandler(
-    socketserver.BaseRequestHandler, packethandler.PacketHandler):
+        socketserver.BaseRequestHandler, packethandler.PacketHandler):
     """
     A socket request handler. Handles a single file edit request.
     """
@@ -142,8 +142,8 @@ class SocketRequestHandler(
             logging.debug('New file: %s', edited_lines)
             # TODO: differential editing
             if (
-                not self.differential or
-                not self.send_diff(original_lines, edited_lines)):
+                    not self.differential or
+                    not self.send_diff(original_lines, edited_lines)):
                 self.send({'Differential': 'False'}, temporary_file)
             original = temporary_file
         os.remove(editing.name)
@@ -176,7 +176,7 @@ class SocketRequestHandler(
             headers = dict(
                 Differential=True,
                 Filesize=edited_length
-            # TODO: Add checksum of edited here.
+                # TODO: Add checksum of edited here.
             )
             self.send(headers, diff_bytes)
         return True

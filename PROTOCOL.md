@@ -1,14 +1,12 @@
 # SSHed protocol
 
-This is a quick, basic description of the communications protocol used on an
+This is a quick, basic description of the communication protocol used on a
 sshed pipe. The motivation behind this file is to allow others to implement
 compatible sshed programs in the language of their choice.
 
 Version numbers should be incremented whenever incompatible changes are made to
 the way sshed passes a file over the socket. Protocol versions are integers
-that are encoded as ASCII strings over the wire. Exceptions can be made for
-protocol versions under development, but should never be used in release
-software.
+that are encoded as UTF-8 strings over the wire.
 
 Versions marked as deprecated are no longer implemented by the most recent
 versions of sshed.
@@ -52,12 +50,10 @@ Should whitespace be required, the corresponding name or contents should be
 encapsulated with double quote characters ("). Newlines are not allowed in the
 header contents, and neither newlines nor colons are allowed in header names.
 
-The last header should be immediately followed by two newline characters, which
-signify the start of the data.
+The last header should be immediately followed by two newline ('\n') characters,
+which signify the start of the data.
 The receiving end MUST have a way to determine the end of the data. In most
 cases, this is provided by a 'Size' header that provides the size in bytes.
-However, it's possible that some future packets may use different methods,
-such as a string end (\0) charater.
 
 ## Protocol versions
 Hopefully once the version 1 protocol has been finalised there won't need to
@@ -97,12 +93,23 @@ packet as the original header.
 NOTE: With [client side caching](https://github.com/lengau/sshed/issues/6), this
 is likely to become more complex.
 
-#### Saving changes
+#### Data types:
 
-NOTE: The following has not yet been implemented. Currently, sshed_client only
-responds when the text editor closes. When it responds, it either closes the
-socket immediately (indicating no change to the file) or sends the entire file
-back to the host.
+All data sent in headers must be encoded as a UTF-8 string. However, some
+headers aren't necessarily string data. The following conventions are used to
+encapsulate other data:
+
+##### Boolean
+
+A boolean header can have two values: 'True' and 'False'. These are written
+the same way as the 'True' and 'False' keywords in Python.
+
+##### Number
+
+A number should be written in decimal in such a way that the 'int' and 'float'
+functions in Python 3.5 are able to handle them.
+
+#### Saving changes
 
 When the client detects that the file has been saved, it should either send the
 entire file or a diff. These packets look slightly different:

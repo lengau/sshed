@@ -14,8 +14,9 @@ import subprocess
 import sys
 import tempfile
 
-from sshed import packethandler
+from . import packethandler
 
+# TODO: Move these into a common library.
 # TODO: Use modes from the stat library.
 USER_ONLY_UMASK = 0o177
 USER_ONLY_DIRECTORY_UMASK = 0o077
@@ -37,6 +38,7 @@ def parse_arguments(args=None):
     return parser.parse_args(args=args)
 
 
+# TODO: Move this into a common library.
 def choose_editor():
     """Choose an editor to use."""
     editor = (
@@ -70,13 +72,13 @@ class SocketNotFoundError(Exception):
 
 
 # pylint: disable=too-many-return-statements
+# TODO: Raise errors as exceptions rather than returning None.
 def find_socket(socket_address=None):
     """Return the path to the socket file to use, or None if unable."""
     if not socket_address:
         try:
             socket_address = os.environ['SSHED_SOCK']
         except KeyError:
-            # TODO: Raise this as an error rather than logging.
             logging.error(
                 'No SSHED_SOCK environment variable and no socket address '
                 'passed via command line.')
@@ -92,7 +94,6 @@ def find_socket(socket_address=None):
             file_stats = os.stat(socket_address + '/socket')
             socket_address += '/socket'
         except FileNotFoundError:
-            # TODO: Raise this as an error rather than logging.
             logging.error(
                 'Specified socket directory (%s) does not contain a valid '
                 'socket file.', socket_address)
@@ -115,8 +116,11 @@ def find_socket(socket_address=None):
 
 class MalformedDiff(Exception):
     """The diff file handed to Patcher isn't valid."""
+    pass
 
 
+# TODO: Refactor this. (Perhaps into a function or group of them?)
+# TODO: This should be in a generic library. It's not tied to sshed at all.
 class Patcher(object):  # pylint: disable=too-few-public-methods
     """A patcher to patch a diff onto a file."""
 
@@ -221,8 +225,8 @@ class Patcher(object):  # pylint: disable=too-few-public-methods
                     output.write(line[1:])
         output.writelines(self.original.readlines())
         output.truncate()
+        output.seek(0)
         if return_data:
-            output.seek(0)
             return output.read()
 
 
