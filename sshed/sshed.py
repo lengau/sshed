@@ -35,12 +35,16 @@ def parse_arguments(args=None):
         '-a', '--socketaddress',
         dest='socket_address',
         help='Use a specific socket file.')
-    return parser.parse_args(args=args)
+    args = parser.parse_args(args=args)
+    logging.basicConfig(format=LOGGING_FORMAT, level=args.logging_level)
+    return args
 
 
 # TODO: Move this into a common library.
 def choose_editor():
     """Choose an editor to use."""
+    # TODO: Improve the ordering of the editor search.
+    # if EDITOR is sshed, we should still try VISUAL, etc.
     editor = (
         os.environ.get('EDITOR') or os.environ.get('VISUAL') or
         os.environ.get('SUDO_EDITOR'))
@@ -230,24 +234,55 @@ class Patcher(object):  # pylint: disable=too-few-public-methods
             return output.read()
 
 
-def main():
-    """Entry point for sshed command."""
-    args = parse_arguments()
-    logging.basicConfig(format=LOGGING_FORMAT, level=args.logging_level)
-    os.umask(USER_ONLY_UMASK)
-    socket_file = find_socket(args.socket_address)
-    if socket_file is None:
-        logging.warning('Using a host side text editor instead.')
-        return subprocess.call(choose_editor() + [args.file])
-    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    client.connect(socket_file)
-    packet_handler = packethandler.PacketHandler(client)
-    headers = dict(
+def generate_headers(args):
+    """Generate the headers for the file packet to send.
+
+    Arguments:
+        args: The parsed command line arguments.
+    Returns:
+        A dictionary of the headers.
+    """
+    return dict(
         Version=1,
         Filename=os.path.basename(args.file),
         Filesize=os.path.getsize(args.file),
         # TODO: Allow the user to disable differential editing.
         Differential=True)
+
+
+def write_differential(edited: bytes, file):
+    """Write a differential update to a file."""
+    logging.debug('Differential editing enabled.')
+    diff = edited.splitlines(keepends=True)
+    logging.debug('Diff:\n%s', diff)
+    patcher = Patcher(file, diff)
+    logging.debug('Hunks:\n%s', patcher.hunks)
+    # TOOD: Handle the original and updated file better.
+    with tempfile.NamedTemporaryFile() as output:
+        patcher.patch(output=output)
+        output.seek(0)
+        logging.debug('Updated file: %s', output.read())
+        file.seek(0)
+        output.seek(0)
+        file.write(output.read())
+    file.truncate()
+
+
+def main():
+    """Entry point for sshed command."""
+    args = parse_arguments()
+
+    os.umask(USER_ONLY_UMASK)
+    socket_file = find_socket(args.socket_address)
+    if not socket_file:
+        logging.warning('Using a host side text editor instead.')
+        return subprocess.call(choose_editor() + [args.file])
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(socket_file)
+    packet_handler = packethandler.PacketHandler(client)
+
+    headers = generate_headers(args)
+
     with open(args.file, mode='r+b') as file:
         packet_handler.send(headers, file)
         while True:
@@ -257,26 +292,15 @@ def main():
                 headers, edited = packet_handler.get()
                 logging.debug('Headers: %s', headers)
                 if headers.get('Differential') is True:
-                    logging.debug('Differential editing enabled.')
-                    diff = edited.splitlines(keepends=True)
-                    logging.debug('Diff:\n%s', diff)
-                    patcher = Patcher(file, diff)
-                    logging.debug('Hunks:\n%s', patcher.hunks)
-                    # TOOD: Handle the original and updated file better.
-                    with tempfile.NamedTemporaryFile() as output:
-                        patcher.patch(output=output)
-                        output.seek(0)
-                        logging.debug('Updated file: %s', output.read())
-                        file.seek(0)
-                        output.seek(0)
-                        file.write(output.read())
-                    file.truncate()
+                    write_differential(edited, file)
                 else:
                     logging.debug('Differential editing disabled.')
                     file.write(edited)
                     file.truncate()
                 logging.debug('File updated.')
             except packethandler.SocketClosedError:
+                # TODO: The socket should be closed nicely.
+                # TODO: Return the editor's exit code (if available).
                 logging.debug('Socket closed. Exiting.')
                 return 0
 
